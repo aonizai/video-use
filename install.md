@@ -1,6 +1,6 @@
 ---
 name: video-use-install
-description: Install video-use into the current agent (Claude Code, Codex, Hermes, Openclaw, etc.) and wire up ffmpeg + the ElevenLabs API key so the user can start editing immediately.
+description: Install video-use into the current agent (Claude Code, Codex, Hermes, Openclaw, etc.) and wire up ffmpeg plus a local-first transcription backend. ElevenLabs is optional.
 ---
 
 # video-use install
@@ -15,7 +15,9 @@ Three things must exist on this machine:
 
 1. The `video-use` repo cloned somewhere stable.
 2. `ffmpeg` on `$PATH` (plus optional `yt-dlp` for online sources).
-3. An ElevenLabs API key in `.env` at the repo root (for Scribe transcription).
+3. At least one transcription option when speech analysis is needed:
+   - local `faster-whisper` (preferred; no API key), or
+   - ElevenLabs Scribe (optional cloud backend).
 
 And one thing must be true about the current agent:
 
@@ -23,7 +25,7 @@ And one thing must be true about the current agent:
 
 ## Install prompt contract
 
-- Do everything yourself. Only ask the user for things you cannot generate — the ElevenLabs API key, and confirmation before `brew install`.
+- Do everything yourself. Prefer local faster-whisper. Only ask for an ElevenLabs API key if the user explicitly chooses the ElevenLabs backend. Ask for confirmation before privileged package-manager actions when needed.
 - Prefer a stable clone path like `~/Developer/video-use` (not `/tmp`, not `~/Downloads`).
 - The skill references helpers by bare name (`transcribe.py`, `render.py`). That works because SKILL.md and `helpers/` ship together — keep them as siblings when you register the skill.
 - After install, verify by running one real command against one real file. Don't declare success on file-existence checks alone.
@@ -42,8 +44,11 @@ If the repo is already there, `git pull --ff-only` and continue.
 ### 2. Install Python deps
 
 ```bash
-# Prefer uv if available; fall back to pip.
+# Base install:
 command -v uv >/dev/null && uv sync || pip install -e .
+
+# Preferred local speech-to-text backend (no API key):
+pip install -e ".[local-stt]"
 ```
 
 `pyproject.toml` lists `requests`, `librosa`, `matplotlib`, `pillow`, `numpy`. No console scripts — helpers are invoked directly as `python helpers/<name>.py`.
@@ -89,9 +94,24 @@ Figure out which agent you are running under, and register once. A symlink of th
 
 If you can't tell which agent you're in, ask the user once: "which agent am I running under — Claude Code, Codex, or something else?" Then pick the right target.
 
-### 5. ElevenLabs API key
+### 5. Choose a transcription backend
 
-Scribe (ElevenLabs) does all transcription. Without a key, nothing transcribes.
+The default CLI mode is `--backend auto`. It prefers local faster-whisper when installed, then falls back to ElevenLabs if a key is configured.
+
+For a no-API setup, verify:
+
+```bash
+python -c "import faster_whisper; print('local STT OK')"
+python helpers/transcribe.py --help
+```
+
+The first local transcription downloads the selected Whisper model once. `large-v3` is the default quality-oriented model and can be changed with `--local-model`.
+
+For visual-only footage, use `--backend none` and skip transcription entirely.
+
+#### Optional ElevenLabs API key
+
+Only configure this if the user wants ElevenLabs Scribe.
 
 1. Check existing state in this order and stop at the first hit:
 
@@ -134,7 +154,7 @@ python ~/Developer/video-use/helpers/timeline_view.py --help >/dev/null && echo 
 ffprobe -version | head -1
 ```
 
-Full transcription test is optional at install time — it burns Scribe credits. Better to wait until the user hands you their first clip.
+Full transcription is optional at install time. Local mode may download a large model; ElevenLabs mode may consume credits. Better to wait until the user hands you their first speech clip.
 
 ### 7. Hand off
 
@@ -153,10 +173,10 @@ Tell the user, in one short message:
 ## Cold-start reminders
 
 - Symlink the **whole directory**, not just `SKILL.md`. The helpers need to sit next to it.
-- If `.env` exists but the key is empty, treat it the same as missing — don't assume existence means validity.
+- An empty ElevenLabs key is fine when local faster-whisper is installed. Treat the key as required only when the ElevenLabs backend is selected.
 - `ffmpeg` from static builds works fine. Any modern (≥ 4.x) build is enough.
 - `yt-dlp` is optional. Don't block install on it; install lazily the first time a user asks to pull from a URL.
 - Node.js/npm are only needed for HyperFrames or Remotion slots. HyperFrames currently requires Node.js 22+.
 - HyperFrames, Remotion, and Manim are optional animation engines. Don't install or prefer one globally during setup; pick the engine per animation slot in `SKILL.md`. HyperFrames can run through `npx --yes hyperframes ...` in the slot directory. Remotion can be scaffolded with `npx create-video@latest` or installed inside the slot before rendering.
-- Never run transcription as part of install verification unless the user explicitly asks — Scribe costs real money.
+- Never run a full transcription as part of install verification unless the user explicitly asks — local mode may download a large model and ElevenLabs mode may cost credits.
 - If the user is on Linux without a package manager Claude recognizes, print the manual `ffmpeg` install URL and wait rather than guessing.
