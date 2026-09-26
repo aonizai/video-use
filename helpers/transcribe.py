@@ -180,7 +180,10 @@ def call_faster_whisper(
             '`pip install -e ".[local-stt]"`.'
         ) from exc
 
-    model = WhisperModel(model_name, device="auto", compute_type="default")
+    model = _LOCAL_MODEL_CACHE.get(model_name)
+    if model is None:
+        model = WhisperModel(model_name, device="auto", compute_type="default")
+        _LOCAL_MODEL_CACHE[model_name] = model
     segments, info = model.transcribe(
         str(audio_path),
         language=language,
